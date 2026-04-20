@@ -1,0 +1,39 @@
+services:
+
+  # ── Frontend (Next.js — pages + API routes) ────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3041:3041"
+    environment:
+      # Override MongoDB URI to point at the mongodb service inside Docker
+      MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/pricing-workflow?authSource=admin
+      NEXT_PUBLIC_APP_URL: http://frontend:3041
+    env_file:
+      - .env          # loads GEMINI_API_KEY, SMTP_*, PRICING_API_*, etc.
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27020:27017"   # host:27020 → container:27017
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  mongo_data:
