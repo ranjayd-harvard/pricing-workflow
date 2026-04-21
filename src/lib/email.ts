@@ -178,6 +178,50 @@ export function buildClarificationEmail(
   `.trim()
 }
 
+export function buildApiFailureEmail(
+  requesterEmail: string,
+  subject: string,
+  errorMessage: string,
+): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; margin: 0; padding: 0; background: #f8fafc; }
+    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: #f59e0b; padding: 32px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 22px; font-weight: 600; }
+    .header p { color: #fef3c7; margin: 8px 0 0; font-size: 14px; }
+    .body { padding: 32px; }
+    .body p { line-height: 1.7; color: #475569; margin: 0 0 16px; }
+    .error-box { background: #fef9c3; border: 1px solid #fde047; border-radius: 8px; padding: 16px 20px; margin: 16px 0; font-size: 14px; color: #713f12; }
+    .footer { padding: 20px 32px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; }
+    .footer p { color: #94a3b8; font-size: 12px; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚠️ Action Required</h1>
+      <p>Your request was approved but could not be processed</p>
+    </div>
+    <div class="body">
+      <p>Your pricing update request for <strong>${subject}</strong> was approved, but we were unable to apply it due to missing or invalid information:</p>
+      <div class="error-box">${errorMessage}</div>
+      <p>Please <strong>reply to this email</strong> with the missing information and we will reprocess your request immediately.</p>
+      <p>Best regards,<br><strong>Pricing Workflow System</strong></p>
+    </div>
+    <div class="footer">
+      <p>Automated notification from Pricing Workflow System</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim()
+}
+
 export function buildApprovalNotificationEmail(
   requesterEmail: string,
   subject: string,

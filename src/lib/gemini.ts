@@ -204,33 +204,37 @@ Extract ALL the field values you can find in the email. Use null for fields not 
   }
 }
 
-export async function mapToPricingTemplate(
+/**
+ * Maps extractedData keys to template field keys deterministically.
+ * Matches case-insensitively and coerces types based on field definitions.
+ * No Gemini call — avoids the numbered-key hallucination problem.
+ */
+export function mapToPricingTemplate(
   extractedData: MappedPricingData,
-  summary: string,
+  _summary: string,
   templateFields: TemplateField[]
-): Promise<MappedPricingData> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+): MappedPricingData {
+  const result: MappedPricingData = {}
 
-  const prompt = `You are a pricing system integration assistant. Map the following extracted email data to a clean pricing API payload.
+  for (const field of templateFields) {
+    // Find a matching key in extractedData (case-insensitive)
+    const matchKey = Object.keys(extractedData).find(
+      k => k.toLowerCase() === field.key.toLowerCase()
+    )
+    const rawValue = matchKey !== undefined ? extractedData[matchKey] : undefined
 
-TEMPLATE FIELDS:
-${templateFields.map(f => `- ${f.key}: ${f.type}${f.required ? ' (required)' : ' (optional)'}`).join('\n')}
+    if (rawValue === undefined || rawValue === null) continue
 
-EXTRACTED DATA:
-${JSON.stringify(extractedData, null, 2)}
-
-SUMMARY:
-${summary}
-
-Respond with ONLY a valid JSON object (no markdown) representing the final mapped pricing payload. Ensure types match the field definitions. For numbers, return numeric values. For dates, use ISO strings.`
-
-  const result = await model.generateContent(prompt)
-  const text = result.response.text()
-  const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-
-  try {
-    return JSON.parse(cleaned)
-  } catch {
-    return extractedData
+    // Coerce to the correct type
+    if (field.type === 'number' || field.type === 'currency') {
+      const num = parseFloat(String(rawValue).replace(/[^0-9.-]/g, ''))
+      if (!isNaN(num)) result[field.key] = num
+    } else if (field.type === 'date') {
+      result[field.key] = String(rawValue)
+    } else {
+      result[field.key] = String(rawValue)
+    }
   }
+
+  return result
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import dbConnect from '@/lib/db'
 import { PricingQueueModel } from '@/models/PricingQueue'
-import { sendEmail, buildApprovalNotificationEmail } from '@/lib/email'
+import { sendEmail, buildApprovalNotificationEmail, buildApiFailureEmail } from '@/lib/email'
 import { callPricingApi } from '@/lib/pricingApi'
 import { PricingTemplateModel } from '@/models/PricingTemplate'
 import { ApiResponse } from '@/types'
@@ -33,19 +33,33 @@ export async function POST(
 
     const apiResult = await callPricingApi(item.mappedData || item.extractedData || {}, id, item.requesterEmail, targetCollection)
     item.apiCallResult = apiResult
-    item.status = apiResult.success ? 'price_updated' : 'failed'
-    await item.save()
 
-    // Notify requester
-    try {
-      await sendEmail({
-        to: item.requesterEmail,
-        subject: `Re: ${item.subject} — Pricing Update ${apiResult.success ? 'Complete' : 'Failed'}`,
-        html: buildApprovalNotificationEmail(item.requesterEmail, item.subject, apiResult.success),
-      })
-    } catch (emailErr) {
-      console.error('[Approve] Failed to send notification email:', emailErr)
+    if (apiResult.success) {
+      item.status = 'price_updated'
+      try {
+        await sendEmail({
+          to: item.requesterEmail,
+          subject: `Re: ${item.subject} — Pricing Update Complete`,
+          html: buildApprovalNotificationEmail(item.requesterEmail, item.subject, true),
+        })
+      } catch (emailErr) {
+        console.error('[Approve] Failed to send success email:', emailErr)
+      }
+    } else {
+      // API failure is likely a data issue — put back to pending_info so the
+      // sender can reply with the missing data and the thread is recovered
+      item.status = 'failed'
+      try {
+        await sendEmail({
+          to: item.requesterEmail,
+          subject: `Re: ${item.subject} — Action Required: Missing Information`,
+          html: buildApiFailureEmail(item.requesterEmail, item.subject, apiResult.error || 'Unknown error'),
+        })
+      } catch (emailErr) {
+        console.error('[Approve] Failed to send failure email:', emailErr)
+      }
     }
+    await item.save()
 
     return NextResponse.json({
       success: true,

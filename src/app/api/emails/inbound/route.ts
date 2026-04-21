@@ -166,10 +166,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
 
     // ── STEP 2: standard intent detection (new / reply / correction) ────────
+    // Also match 'failed' items — sender may reply after an approval API failure
     const pendingInfoItem = await PricingQueueModel.findOne({
       requesterEmail: senderEmail,
       templateId: template._id.toString(),
-      status: 'pending_info',
+      status: { $in: ['pending_info', 'failed'] },
     }).sort({ createdAt: -1 })
 
     const { intent, confidence: intentConfidence, reasoning: intentReasoning } = await detectEmailIntent(
@@ -238,7 +239,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
 
       // Summarize using the full thread so Gemini has all field values in context
       const { summary, extractedData } = await summarizeEmailWithGemini(threadText, template.name, template.mandatoryFields)
-      const mappedData = await mapToPricingTemplate(extractedData, summary, [
+      const mappedData = mapToPricingTemplate(extractedData, summary, [
         ...template.mandatoryFields,
         ...(template.optionalFields || []),
       ])
@@ -290,7 +291,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
 
     const { summary, extractedData } = await summarizeEmailWithGemini(emailBody, template.name, template.mandatoryFields)
-    const mappedData = await mapToPricingTemplate(extractedData, summary, [
+    const mappedData = mapToPricingTemplate(extractedData, summary, [
       ...template.mandatoryFields,
       ...(template.optionalFields || []),
     ])

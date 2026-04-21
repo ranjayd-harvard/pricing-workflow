@@ -18,6 +18,12 @@ export interface PricingApiResult {
  * 'events'   → placeholder until EventModel is built; logs and returns success
  * 'generic'  → no write; data stays in the queue item only
  */
+/** Case-insensitive field lookup on mappedData */
+function getField(data: MappedPricingData, key: string): unknown {
+  const match = Object.keys(data).find(k => k.toLowerCase() === key.toLowerCase())
+  return match !== undefined ? data[match] : undefined
+}
+
 export async function callPricingApi(
   mappedData: MappedPricingData,
   queueId?: string,
@@ -35,16 +41,18 @@ export async function callPricingApi(
     }
 
     if (targetCollection === 'events') {
-      const eventId = String(mappedData.event_id || '').trim()
+      const rawId = String(getField(mappedData, 'event_id') || '').trim()
+      const eventId = rawId || String(getField(mappedData, 'event_name') || '').trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_-]/g, '')
       if (!eventId) {
-        return { success: false, error: 'event_id is required to update the events table', calledAt }
+        return { success: false, error: 'event_id (or event_name to derive one) is required to update the events table', calledAt }
       }
 
       const existing = await EventModel.findOne({ event_id: eventId })
       const oldPrice = existing ? existing.current_price : null
+      const newPrice = parseFloat(String(getField(mappedData, 'new_price') ?? '').replace(/[^0-9.-]/g, ''))
 
       const historyEntry = oldPrice !== null
-        ? [{ old_price: oldPrice, new_price: Number(mappedData.new_price), changed_at: calledAt, queue_id: queueId || '' }]
+        ? [{ old_price: oldPrice, new_price: newPrice, changed_at: calledAt, queue_id: queueId || '' }]
         : []
 
       const updated = await EventModel.findOneAndUpdate(
@@ -52,13 +60,13 @@ export async function callPricingApi(
         {
           $set: {
             event_id:        eventId,
-            event_name:      String(mappedData.event_name || ''),
-            current_price:   Number(mappedData.new_price),
-            new_price:       Number(mappedData.new_price),
-            effective_date:  mappedData.effective_date ? String(mappedData.effective_date) : undefined,
-            reason:          mappedData.reason         ? String(mappedData.reason)         : undefined,
-            sponsor:         mappedData.event_sponsor  ? String(mappedData.event_sponsor)  : undefined,
-            notes:           mappedData.notes          ? String(mappedData.notes)          : undefined,
+            event_name:      String(getField(mappedData, 'event_name') || ''),
+            current_price:   newPrice,
+            new_price:       newPrice,
+            effective_date:  getField(mappedData, 'effective_date') ? String(getField(mappedData, 'effective_date')) : undefined,
+            reason:          getField(mappedData, 'reason')         ? String(getField(mappedData, 'reason'))         : undefined,
+            sponsor:         getField(mappedData, 'event_sponsor')  ? String(getField(mappedData, 'event_sponsor'))  : undefined,
+            notes:           getField(mappedData, 'notes')          ? String(getField(mappedData, 'notes'))          : undefined,
             last_updated_by: requesterEmail || '',
             last_queue_id:   queueId || '',
           },
@@ -84,16 +92,17 @@ export async function callPricingApi(
     }
 
     // ── products (default) ────────────────────────────────────────────────
-    const sku = String(mappedData.product_sku || '').trim().toUpperCase()
+    const sku = String(getField(mappedData, 'product_sku') || '').trim().toUpperCase()
     if (!sku) {
       return { success: false, error: 'product_sku is required to update the products table', calledAt }
     }
 
     const existing = await ProductModel.findOne({ product_sku: sku })
     const oldPrice = existing ? existing.current_price : null
+    const newPrice = parseFloat(String(getField(mappedData, 'new_price') ?? '').replace(/[^0-9.-]/g, ''))
 
     const historyEntry = oldPrice !== null
-      ? [{ old_price: oldPrice, new_price: Number(mappedData.new_price), changed_at: calledAt, queue_id: queueId || '' }]
+      ? [{ old_price: oldPrice, new_price: newPrice, changed_at: calledAt, queue_id: queueId || '' }]
       : []
 
     const updated = await ProductModel.findOneAndUpdate(
@@ -101,14 +110,14 @@ export async function callPricingApi(
       {
         $set: {
           product_sku:     sku,
-          product_name:    String(mappedData.product_name || ''),
-          current_price:   Number(mappedData.new_price),
-          new_price:       Number(mappedData.new_price),
-          effective_date:  String(mappedData.effective_date || ''),
-          reason:          String(mappedData.reason || ''),
-          region:          mappedData.region   ? String(mappedData.region)   : undefined,
-          currency:        mappedData.currency ? String(mappedData.currency) : 'USD',
-          notes:           mappedData.notes    ? String(mappedData.notes)    : undefined,
+          product_name:    String(getField(mappedData, 'product_name') || ''),
+          current_price:   newPrice,
+          new_price:       newPrice,
+          effective_date:  String(getField(mappedData, 'effective_date') || ''),
+          reason:          String(getField(mappedData, 'reason') || ''),
+          region:          getField(mappedData, 'region')   ? String(getField(mappedData, 'region'))   : undefined,
+          currency:        getField(mappedData, 'currency') ? String(getField(mappedData, 'currency')) : 'USD',
+          notes:           getField(mappedData, 'notes')    ? String(getField(mappedData, 'notes'))    : undefined,
           last_updated_by: requesterEmail || '',
           last_queue_id:   queueId || '',
         },

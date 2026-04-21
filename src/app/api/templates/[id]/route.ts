@@ -20,6 +20,13 @@ export async function GET(
   }
 }
 
+function normalizeFields(fields: any[]): any[] {
+  return (fields || []).map(f => ({
+    ...f,
+    key: f.key?.trim() || f.label?.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || '',
+  }))
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -28,6 +35,10 @@ export async function PUT(
     await dbConnect()
     const { id } = await params
     const body = await req.json()
+
+    body.mandatoryFields = normalizeFields(body.mandatoryFields)
+    body.optionalFields  = normalizeFields(body.optionalFields)
+
     const template = await PricingTemplateModel.findByIdAndUpdate(id, body, { new: true, runValidators: true }).lean() as any
     if (!template) {
       return NextResponse.json({ success: false, error: 'Template not found' }, { status: 404 })

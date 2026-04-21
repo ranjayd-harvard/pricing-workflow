@@ -231,17 +231,27 @@ export default function QueueItemPage() {
           </div>
         )}
 
-        {/* Mapped Data */}
-        {item.mappedData && Object.keys(item.mappedData).length > 0 && (
-          <div className="card p-5">
-            <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-green-400" /> Mapped Pricing Payload
-            </h3>
-            <pre className="text-xs text-slate-700 bg-surface rounded-lg p-3 overflow-auto max-h-48 font-mono leading-relaxed">
-              {JSON.stringify(item.mappedData, null, 2)}
-            </pre>
-          </div>
-        )}
+        {/* Mapped Data — fall back to extractedData if mappedData is empty */}
+        {(() => {
+          const payload = (item.mappedData && Object.keys(item.mappedData).length > 0)
+            ? item.mappedData
+            : (item.extractedData && Object.keys(item.extractedData).length > 0)
+              ? item.extractedData
+              : null
+          const isFallback = payload === item.extractedData
+          return payload ? (
+            <div className="card p-5">
+              <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+                <FileText className="w-4 h-4 text-green-400" />
+                Mapped Pricing Payload
+                {isFallback && <span className="text-xs text-amber-500 font-normal">(from extracted data)</span>}
+              </h3>
+              <pre className="text-xs text-slate-700 bg-surface rounded-lg p-3 overflow-auto max-h-48 font-mono leading-relaxed">
+                {JSON.stringify(payload, null, 2)}
+              </pre>
+            </div>
+          ) : null
+        })()}
 
         {/* Original Email */}
         <div className="card p-5 lg:col-span-2">

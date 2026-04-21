@@ -19,10 +19,27 @@ export async function GET(): Promise<NextResponse<ApiResponse<PricingTemplate[]>
   }
 }
 
+function normalizeFields(fields: any[]): any[] {
+  return (fields || []).map(f => ({
+    ...f,
+    // Auto-derive key from label if blank
+    key: f.key?.trim() || f.label?.trim().toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || '',
+  }))
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<PricingTemplate>>> {
   try {
     await dbConnect()
     const body = await req.json()
+
+    body.mandatoryFields = normalizeFields(body.mandatoryFields)
+    body.optionalFields  = normalizeFields(body.optionalFields)
+
+    const allKeys = [...body.mandatoryFields, ...body.optionalFields].map((f: any) => f.key).filter(Boolean)
+    const emptyKeys = allKeys.filter((k: string) => !k)
+    if (emptyKeys.length) {
+      return NextResponse.json({ success: false, error: 'All fields must have a key or label set' }, { status: 400 })
+    }
 
     const template = await PricingTemplateModel.create(body)
     return NextResponse.json(

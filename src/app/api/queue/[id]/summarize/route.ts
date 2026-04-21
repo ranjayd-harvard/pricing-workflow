@@ -30,7 +30,7 @@ export async function POST(
       template.mandatoryFields
     )
 
-    const mappedData = await mapToPricingTemplate(extractedData, summary, [
+    const mappedData = mapToPricingTemplate(extractedData, summary, [
       ...template.mandatoryFields,
       ...(template.optionalFields || []),
     ])
