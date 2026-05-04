@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Package,
   CalendarDays,
+  MessageCircle,
+  ImageUp,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -22,6 +24,8 @@ const navItems = [
   { href: '/events', label: 'Events', icon: CalendarDays },
   { href: '/templates', label: 'Templates', icon: FileText },
   { href: '/simulate', label: 'Simulate Email', icon: Mail },
+  { href: '/upload', label: 'Upload Image', icon: ImageUp },
+  { href: '/chat', label: 'Chat', icon: MessageCircle },
 ]
 
 export default function Sidebar() {

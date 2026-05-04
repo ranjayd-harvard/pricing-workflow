@@ -78,6 +78,7 @@ export type EmailIntent =
   | 'new_request'        // Fresh pricing request — create new queue item
   | 'reply_missing_info' // Providing missing fields for an existing pending_info item
   | 'correction'         // Correcting/amending a previous request — create new, cancel old
+  | 'confirm_request'    // Sender confirming the extracted summary looks correct
 
 export interface IntentResult {
   intent: EmailIntent
@@ -103,6 +104,7 @@ Classify the following email into exactly one of these intents:
 - "new_request": A fresh, standalone pricing update request
 - "reply_missing_info": The sender is replying to provide missing fields that were previously requested
 - "correction": The sender is correcting or amending a previously submitted request (e.g. wrong price, mistake, update to a prior submission)
+- "confirm_request": The sender is confirming that the extracted summary we sent them looks correct (e.g. "yes", "confirmed", "looks good", "that's correct", "proceed", "approve it")
 
 CONTEXT:
 - Subject: "${subject}"
@@ -115,13 +117,14 @@ ${emailBody}
 ---
 
 Signals to look for:
-- "correction" intent: phrases like "wrong price", "mistake", "correction", "actually", "should be", "meant to say", "last update was not correct", "please update", "previous request", "instead of"
+- "confirm_request" intent: short affirmative reply — "yes", "confirmed", "looks good", "correct", "proceed", "approved", "that's right", "go ahead"
+- "correction" intent: phrases like "wrong price", "mistake", "correction", "actually", "should be", "meant to say", "last update was not correct", "please update", "previous request", "instead of", or "no" followed by corrected values
 - "reply_missing_info" intent: providing only specific field values, short reply, responds to a request for missing info
 - "new_request" intent: full standalone email with complete request details, no references to previous submissions
 
 Respond with ONLY a valid JSON object:
 {
-  "intent": "new_request" | "reply_missing_info" | "correction",
+  "intent": "new_request" | "reply_missing_info" | "correction" | "confirm_request",
   "confidence": "high" | "medium" | "low",
   "reasoning": "one sentence explanation"
 }`
@@ -202,6 +205,36 @@ Extract ALL the field values you can find in the email. Use null for fields not 
       extractedData: {},
     }
   }
+}
+
+/**
+ * Uses Gemini Vision to extract pricing information from an image.
+ * Returns a plain-text representation suitable for the email inbound pipeline.
+ */
+export async function extractTextFromImage(
+  base64Data: string,
+  mimeType: string,
+): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+  const imagePart = { inlineData: { data: base64Data, mimeType } }
+
+  const prompt = `You are a data extraction assistant for a pricing workflow system.
+
+Analyze this image and extract ALL pricing-related information visible in it. The image may be a pricing sheet, invoice, purchase order, product list, or any document with pricing data.
+
+Write the extracted data as a structured pricing update request email body. Include:
+- Product names, SKUs, or identifiers
+- Prices (current price, new price, or both)
+- Effective dates
+- Regions, currencies, or markets if mentioned
+- Reasons for price changes if stated
+- Any other relevant pricing fields
+
+Format as plain text as if a person typed this email. Be thorough and include ALL data visible in the image. Output ONLY the email body content — no preamble, no commentary.`
+
+  const result = await model.generateContent([prompt, imagePart])
+  return result.response.text()
 }
 
 /**

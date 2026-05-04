@@ -10,12 +10,19 @@ const transporter = nodemailer.createTransport({
   },
 })
 
+export interface EmailAttachment {
+  filename: string
+  content: Buffer
+  contentType: string
+}
+
 export interface SendEmailOptions {
   to: string
   subject: string
   html: string
   text?: string
   replyTo?: string
+  attachments?: EmailAttachment[]
 }
 
 export async function sendEmail(options: SendEmailOptions) {
@@ -26,6 +33,7 @@ export async function sendEmail(options: SendEmailOptions) {
     html: options.html,
     text: options.text,
     replyTo: options.replyTo,
+    attachments: options.attachments,
   })
   return info
 }
@@ -167,6 +175,80 @@ export function buildClarificationEmail(
       </div>
 
       <p>Once you reply, we'll apply the right template and process your request right away — no need to resend the original details.</p>
+      <p>Best regards,<br><strong>Pricing Workflow System</strong></p>
+    </div>
+    <div class="footer">
+      <p>Automated message from the Pricing Workflow System</p>
+    </div>
+  </div>
+</body>
+</html>
+  `.trim()
+}
+
+export function buildConfirmationEmail(
+  requesterName: string,
+  subject: string,
+  summary: string,
+  fields: Record<string, string | number | null>,
+): string {
+  const fieldRows = Object.entries(fields)
+    .filter(([, v]) => v !== null && v !== undefined && v !== '')
+    .map(([k, v]) => `
+      <tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;color:#64748b;font-size:13px;white-space:nowrap">${k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e2e8f0;color:#0f172a;font-size:13px;font-weight:600;font-family:monospace">${v}</td>
+      </tr>`).join('')
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1e293b; margin: 0; padding: 0; background: #f8fafc; }
+    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+    .header { background: linear-gradient(135deg, #0369a1 0%, #0ea5e9 100%); padding: 32px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 22px; font-weight: 600; }
+    .header p { color: #bae6fd; margin: 8px 0 0; font-size: 14px; }
+    .body { padding: 32px; }
+    .body p { line-height: 1.7; color: #475569; margin: 0 0 16px; }
+    .summary-box { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px 20px; margin: 16px 0; font-size: 14px; color: #0c4a6e; line-height: 1.7; }
+    .fields-table { width: 100%; border-collapse: collapse; margin: 16px 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+    .fields-table th { background: #f8fafc; padding: 8px 12px; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; border-bottom: 1px solid #e2e8f0; }
+    .cta-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center; }
+    .cta-box p { color: #14532d; margin: 0 0 8px; font-size: 14px; }
+    .footer { padding: 20px 32px; background: #f8fafc; border-top: 1px solid #e2e8f0; text-align: center; }
+    .footer p { color: #94a3b8; font-size: 12px; margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📋 Please Confirm Your Request</h1>
+      <p>Review the details we extracted before we proceed</p>
+    </div>
+    <div class="body">
+      <p>Hi ${requesterName || 'there'},</p>
+      <p>We received your pricing update request for <strong>${subject}</strong> and extracted the following details. Please review and confirm they are correct before we proceed to the approval queue.</p>
+
+      <div class="summary-box">${summary}</div>
+
+      <table class="fields-table">
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Extracted Value</th>
+          </tr>
+        </thead>
+        <tbody>${fieldRows}</tbody>
+      </table>
+
+      <div class="cta-box">
+        <p><strong>Does everything look correct?</strong></p>
+        <p style="color:#166534;font-size:13px">Reply <strong>"Yes, confirmed"</strong> to proceed to approval.<br>Reply <strong>"No"</strong> or send a correction if anything is wrong.</p>
+      </div>
+
       <p>Best regards,<br><strong>Pricing Workflow System</strong></p>
     </div>
     <div class="footer">
