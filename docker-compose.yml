@@ -35,5 +35,26 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ── Gmail Poller (replaces Apps Script) ───────────────────────────────────
+  gmail-poller:
+    build:
+      context: .
+      dockerfile: Dockerfile.poller
+    environment:
+      GMAIL_CLIENT_ID: ${GMAIL_CLIENT_ID}
+      GMAIL_CLIENT_SECRET: ${GMAIL_CLIENT_SECRET}
+      GMAIL_REFRESH_TOKEN: ${GMAIL_REFRESH_TOKEN}
+      SMTP_USER: ${SMTP_USER}
+      NEXT_PUBLIC_APP_URL: http://frontend:3041
+    env_file:
+      - .env
+    volumes:
+      - poller-data:/data
+    depends_on:
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   mongo_data:
+  poller-data:

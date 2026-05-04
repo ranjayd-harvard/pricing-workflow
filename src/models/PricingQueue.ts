@@ -27,6 +27,7 @@ const PricingQueueSchema = new Schema<PricingQueueDocument>(
         'pending_summary',
         'summarized',
         'mapped',
+        'pending_confirmation',
         'pending_approval',
         'approved',
         'rejected',
@@ -59,6 +60,16 @@ const PricingQueueSchema = new Schema<PricingQueueDocument>(
       response: Schema.Types.Mixed,
       error: String,
       calledAt: String,
+    },
+    geminiLog: {
+      intent: String,
+      intentConfidence: String,
+      intentReasoning: String,
+      templateClassification: {
+        matchedTemplateId: String,
+        confidence: String,
+        reasoning: String,
+      },
     },
   },
   {

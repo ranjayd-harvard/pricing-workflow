@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import dbConnect from '@/lib/db'
 import { PricingTemplateModel } from '@/models/PricingTemplate'
 import { PricingQueueModel } from '@/models/PricingQueue'
-import { sendEmail, buildMissingFieldsEmail, buildClarificationEmail } from '@/lib/email'
+import { sendEmail, buildMissingFieldsEmail, buildClarificationEmail, buildConfirmationEmail } from '@/lib/email'
 import { checkMandatoryFields, extractSenderName, extractEmailAddress } from '@/lib/fieldExtractor'
 import {
   summarizeEmailWithGemini,
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
 
     let template: (typeof allTemplates)[0] | null = null
+    let classificationResult: Awaited<ReturnType<typeof classifyEmailToTemplate>> | undefined
 
     if (allTemplates.length === 1) {
       // Unambiguous — only one template registered to this inbox
@@ -106,11 +107,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
           description: t.description,
         }))
 
-        const { matchedTemplateId, confidence, reasoning } = await classifyEmailToTemplate(
+        classificationResult = await classifyEmailToTemplate(
           emailBody,
           subject,
           candidates,
         )
+        const { matchedTemplateId, confidence, reasoning } = classificationResult
         console.log(`[Email Inbound] Template classification: id=${matchedTemplateId} confidence=${confidence} — ${reasoning}`)
 
         if (matchedTemplateId) {
@@ -144,6 +146,9 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
             extractedData: {},
             status: 'pending_clarification',
             clarificationOptions: options,
+            geminiLog: {
+              templateClassification: { matchedTemplateId, confidence, reasoning },
+            },
           })
 
           await sendEmail({
@@ -180,6 +185,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     )
     console.log(`[Email Inbound] Intent: ${intent} (${intentConfidence}) — ${intentReasoning} | Template: "${template.name}"`)
 
+    // Build geminiLog to attach to any queue item created below
+    const geminiLog = {
+      intent,
+      intentConfidence,
+      intentReasoning,
+      ...(typeof classificationResult !== 'undefined' ? { templateClassification: classificationResult } : {}),
+    }
+
     // Build combined text from all sender messages in the thread so field
     // detection sees data spread across the original email + replies.
     // Only include messages FROM the requester — system reply emails contain
@@ -193,9 +206,39 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
 
     const { missingFields } = checkMandatoryFields(emailBody, template.mandatoryFields)
 
+    // ── CONFIRM REQUEST ──────────────────────────────────────────────────────
+    // Sender replied "yes" to the confirmation email — move to pending_approval
+    if (intent === 'confirm_request') {
+      const pendingConfirmItem = await PricingQueueModel.findOne({
+        requesterEmail: senderEmail,
+        templateId: template._id.toString(),
+        status: 'pending_confirmation',
+      }).sort({ createdAt: -1 })
+
+      if (pendingConfirmItem) {
+        pendingConfirmItem.emailThread.push({
+          from: senderEmail,
+          to: targetEmail,
+          subject,
+          body: emailBody,
+          timestamp: new Date().toISOString(),
+          messageId,
+        })
+        pendingConfirmItem.status = 'pending_approval'
+        await pendingConfirmItem.save()
+        console.log(`[Email Inbound] Requester confirmed — moved to pending_approval: ${pendingConfirmItem._id}`)
+        return NextResponse.json({
+          success: true,
+          message: 'Requester confirmed — request moved to approval queue',
+          data: { queueId: pendingConfirmItem._id, status: 'pending_approval', intent },
+        })
+      }
+      // No pending_confirmation item found — fall through and treat as new request
+    }
+
     // ── CORRECTION ──────────────────────────────────────────────────────────
     if (intent === 'correction') {
-      const cancellableStatuses = ['pending_info', 'pending_summary', 'summarized', 'mapped', 'pending_approval']
+      const cancellableStatuses = ['pending_info', 'pending_summary', 'summarized', 'mapped', 'pending_confirmation', 'pending_approval']
       const cancelled = await PricingQueueModel.updateMany(
         { requesterEmail: senderEmail, templateId: template._id.toString(), status: { $in: cancellableStatuses } },
         { $set: { status: 'rejected', rejectionReason: 'Superseded by correction email from requester', rejectedBy: 'system' } },
@@ -233,11 +276,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
         })
       }
 
+      // All fields present — summarize and stage for confirmation
       pendingInfoItem.status = 'pending_summary'
       pendingInfoItem.missingFields = []
       await pendingInfoItem.save()
 
-      // Summarize using the full thread so Gemini has all field values in context
       const { summary, extractedData } = await summarizeEmailWithGemini(threadText, template.name, template.mandatoryFields)
       const mappedData = mapToPricingTemplate(extractedData, summary, [
         ...template.mandatoryFields,
@@ -246,13 +289,19 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       pendingInfoItem.summary = summary
       pendingInfoItem.extractedData = extractedData
       pendingInfoItem.mappedData = mappedData
-      pendingInfoItem.status = 'pending_approval'
+      pendingInfoItem.status = 'pending_confirmation'
       await pendingInfoItem.save()
+
+      await sendEmail({
+        to: senderEmail,
+        subject: `Re: ${subject} — Please Confirm Your Pricing Request`,
+        html: buildConfirmationEmail(senderName, subject, summary, mappedData as Record<string, string | number | null>),
+      })
 
       return NextResponse.json({
         success: true,
-        message: 'Reply processed — all fields present, added to approval queue',
-        data: { queueId: pendingInfoItem._id, status: 'pending_approval', intent },
+        message: 'Reply processed — all fields present, confirmation email sent to requester',
+        data: { queueId: pendingInfoItem._id, status: 'pending_confirmation', intent },
       })
     }
 
@@ -275,6 +324,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       missingFields,
       extractedData: {},
       status: missingFields.length > 0 ? 'pending_info' : 'pending_summary',
+      geminiLog,
     })
 
     if (missingFields.length > 0) {
@@ -290,6 +340,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       })
     }
 
+    // All fields present — summarize and stage for confirmation
     const { summary, extractedData } = await summarizeEmailWithGemini(emailBody, template.name, template.mandatoryFields)
     const mappedData = mapToPricingTemplate(extractedData, summary, [
       ...template.mandatoryFields,
@@ -298,15 +349,21 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     newQueueItem.summary = summary
     newQueueItem.extractedData = extractedData
     newQueueItem.mappedData = mappedData
-    newQueueItem.status = 'pending_approval'
+    newQueueItem.status = 'pending_confirmation'
     await newQueueItem.save()
+
+    await sendEmail({
+      to: senderEmail,
+      subject: `Re: ${subject} — Please Confirm Your Pricing Request`,
+      html: buildConfirmationEmail(senderName, subject, summary, mappedData as Record<string, string | number | null>),
+    })
 
     return NextResponse.json({
       success: true,
       message: intent === 'correction'
-        ? 'Correction received — previous requests cancelled, new request queued for approval'
-        : 'Email processed and added to approval queue',
-      data: { queueId: newQueueItem._id, status: 'pending_approval', intent },
+        ? 'Correction received — previous requests cancelled, confirmation email sent to requester'
+        : 'Email processed — confirmation email sent to requester',
+      data: { queueId: newQueueItem._id, status: 'pending_confirmation', intent },
     })
   } catch (err) {
     console.error('[Email Inbound]', err)

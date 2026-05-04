@@ -153,6 +153,8 @@ export default function DashboardPage() {
             color="text-violet-700" bg="bg-violet-50" border="border-violet-200" loading={loading} />
           <StatCard label="Awaiting Info" value={s('pending_info')} icon={AlertCircle}
             color="text-amber-700" bg="bg-amber-50" border="border-amber-200" loading={loading} />
+          <StatCard label="Awaiting Confirmation" value={s('pending_confirmation')} icon={Clock}
+            color="text-sky-700" bg="bg-sky-50" border="border-sky-200" loading={loading} />
           <StatCard label="Processing" value={s('pending_summary') + s('summarized') + s('mapped')} icon={Clock}
             color="text-blue-700" bg="bg-blue-50" border="border-blue-200" loading={loading} />
         </div>

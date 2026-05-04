@@ -1,0 +1,14 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install only what the poller needs
+COPY package.json package-lock.json* ./
+RUN npm install --ignore-scripts 2>/dev/null || npm install
+
+# Install googleapis and tsx (not in main package.json)
+RUN npm install googleapis tsx
+
+COPY scripts/gmail-poller.ts ./scripts/
+
+CMD ["npx", "tsx", "scripts/gmail-poller.ts"]

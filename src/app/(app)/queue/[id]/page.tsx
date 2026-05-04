@@ -13,6 +13,26 @@ import { useToast } from '@/components/ui/Toast'
 import { PricingQueueItem, QueueStatus } from '@/types'
 import { cn } from '@/lib/utils'
 
+function ConfidenceBar({ label }: { label?: string }) {
+  const score = label === 'high' ? 90 : label === 'medium' ? 55 : label === 'low' ? 20 : null
+  if (score === null) return null
+  const color = label === 'high' ? 'bg-emerald-500' : label === 'medium' ? 'bg-amber-400' : 'bg-red-400'
+  const textColor = label === 'high' ? 'text-emerald-600' : label === 'medium' ? 'text-amber-600' : 'text-red-500'
+  return (
+    <div>
+      <span className="text-xs text-slate-400 uppercase tracking-wide block mb-1">Confidence</span>
+      <div className="flex items-center gap-2">
+        <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+          <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
+        </div>
+        <span className={`text-xs font-semibold ${textColor}`}>
+          {score}/100 <span className="font-normal capitalize">({label})</span>
+        </span>
+      </div>
+    </div>
+  )
+}
+
 export default function QueueItemPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -253,12 +273,52 @@ export default function QueueItemPage() {
           ) : null
         })()}
 
+        {/* Gemini Audit Log */}
+        {item.geminiLog && (
+          <div className="card p-5 lg:col-span-2">
+            <h3 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-purple-400" /> Gemini Audit Log
+            </h3>
+            {/* Header row */}
+            <div className="grid grid-cols-[160px_200px_1fr] gap-x-6 text-xs text-slate-400 uppercase tracking-wide pb-2 border-b border-surface-border">
+              <span>Signal</span>
+              <span>Confidence</span>
+              <span>Reasoning</span>
+            </div>
+            <div className="space-y-0 divide-y divide-surface-border">
+              {item.geminiLog.intent && (
+                <div className="grid grid-cols-[160px_200px_1fr] gap-x-6 items-start py-3 text-sm">
+                  <div>
+                    <span className="text-xs text-slate-400 block mb-1">Intent</span>
+                    <span className="font-mono text-slate-800 text-xs bg-surface px-2 py-0.5 rounded">{item.geminiLog.intent}</span>
+                  </div>
+                  <ConfidenceBar label={item.geminiLog.intentConfidence} />
+                  <span className="text-slate-600 text-xs leading-relaxed">{item.geminiLog.intentReasoning ?? '—'}</span>
+                </div>
+              )}
+              {item.geminiLog.templateClassification && (
+                <div className="grid grid-cols-[160px_200px_1fr] gap-x-6 items-start py-3 text-sm">
+                  <div>
+                    <span className="text-xs text-slate-400 block mb-1">Template</span>
+                    <span className="text-slate-800 text-xs font-medium block">{item.templateName ?? '—'}</span>
+                    <span className="font-mono text-slate-400 text-[10px]">
+                      {item.geminiLog.templateClassification.matchedTemplateId ?? 'none'}
+                    </span>
+                  </div>
+                  <ConfidenceBar label={item.geminiLog.templateClassification.confidence} />
+                  <span className="text-slate-600 text-xs leading-relaxed">{item.geminiLog.templateClassification.reasoning ?? '—'}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Original Email */}
         <div className="card p-5 lg:col-span-2">
-          <h3 className="font-semibold text-slate-200 mb-3 flex items-center gap-2">
-            <Mail className="w-4 h-4 text-blue-400" /> Original Email Body
+          <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <Mail className="w-4 h-4 text-blue-500" /> Original Email Body
           </h3>
-          <pre className="text-xs text-slate-300 bg-surface rounded-lg p-3 overflow-auto max-h-48 font-mono leading-relaxed whitespace-pre-wrap">
+          <pre className="text-xs text-slate-800 bg-slate-50 border border-slate-200 rounded-lg p-4 overflow-auto max-h-48 font-mono leading-relaxed whitespace-pre-wrap">
             {item.originalEmailBody}
           </pre>
         </div>

@@ -24,12 +24,13 @@ export interface PricingTemplate {
 }
 
 export type QueueStatus =
-  | 'pending_clarification' // Multiple templates match — waiting for sender to clarify intent
-  | 'pending_info'
-  | 'pending_summary'
+  | 'pending_clarification'  // Multiple templates match — waiting for sender to clarify intent
+  | 'pending_info'           // Missing mandatory fields — waiting for requester to provide them
+  | 'pending_summary'        // Fields complete — Gemini summarization in progress
   | 'summarized'
   | 'mapped'
-  | 'pending_approval'
+  | 'pending_confirmation'   // Staged — summary sent to requester, awaiting their "yes" confirmation
+  | 'pending_approval'       // Confirmed by requester — awaiting human approval
   | 'approved'
   | 'rejected'
   | 'price_updated'
@@ -73,6 +74,16 @@ export interface PricingQueueItem {
     response?: unknown
     error?: string
     calledAt?: string
+  }
+  geminiLog?: {
+    intent?: string
+    intentConfidence?: string
+    intentReasoning?: string
+    templateClassification?: {
+      matchedTemplateId: string | null
+      confidence: string
+      reasoning: string
+    }
   }
   createdAt?: string
   updatedAt?: string

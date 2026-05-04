@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo:*)",
+      "Bash(git --version)",
+      "Bash(git init:*)",
+      "Bash(git remote:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(docker compose:*)",
+      "Bash(mongosh \"mongodb://admin:Test12345@localhost:27020/pricing-workflow?authSource=admin\" --quiet --eval 'db.pricingtemplates.find\\({name:/event/i},{name:1,mandatoryFields:1,optionalFields:1}\\).forEach\\(t=>print\\(JSON.stringify\\(t,null,2\\)\\)\\)')",
+      "Bash(mongosh 'mongodb://admin:Test12345@localhost:27020/pricing-workflow?authSource=admin' --quiet --eval ':*)",
+      "Bash(npx tsc:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:sdk.vercel.ai)",
+      "WebSearch",
+      "WebFetch(domain:ai-sdk.dev)"
+    ],
+    "additionalDirectories": [
+      "/Users/ranjay.kumar/Documents/Ranjay/agentic-ai/react/pricing-workflow/src/app/api/queue/[id]/summarize"
+    ]
+  }
+}
