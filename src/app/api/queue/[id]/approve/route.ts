@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import dbConnect from '@/lib/db'
 import { PricingQueueModel } from '@/models/PricingQueue'
 import { sendEmail, buildApprovalNotificationEmail, buildApiFailureEmail } from '@/lib/email'
-import { callPricingApi } from '@/lib/pricingApi'
+import { callPricingApi, callPricingApiForItems } from '@/lib/pricingApi'
 import { PricingTemplateModel } from '@/models/PricingTemplate'
 import { ApiResponse } from '@/types'
 
@@ -31,10 +31,32 @@ export async function POST(
     const template = await PricingTemplateModel.findById(item.templateId).lean<{ targetCollection?: string }>()
     const targetCollection = (template?.targetCollection ?? 'products') as import('@/types').TargetCollection
 
-    const apiResult = await callPricingApi(item.mappedData || item.extractedData || {}, id, item.requesterEmail, targetCollection)
-    item.apiCallResult = apiResult
+    const hasMultipleItems = Array.isArray(item.mappedItems) && item.mappedItems.length > 1
 
-    if (apiResult.success) {
+    let apiSuccess: boolean
+    let apiResultPayload: unknown
+
+    if (hasMultipleItems) {
+      const multiResult = await callPricingApiForItems(item.mappedItems!, id, item.requesterEmail, targetCollection)
+      apiSuccess = multiResult.success
+      apiResultPayload = multiResult
+      item.apiCallResult = {
+        success: multiResult.success,
+        response: multiResult,
+        error: multiResult.failureCount > 0
+          ? `${multiResult.failureCount} of ${multiResult.results.length} items failed`
+          : undefined,
+        calledAt: multiResult.calledAt,
+      }
+      console.log(`[Approve] Multi-item: ${multiResult.successCount} succeeded, ${multiResult.failureCount} failed`)
+    } else {
+      const singleResult = await callPricingApi(item.mappedData || item.extractedData || {}, id, item.requesterEmail, targetCollection)
+      apiSuccess = singleResult.success
+      apiResultPayload = singleResult
+      item.apiCallResult = singleResult
+    }
+
+    if (apiSuccess) {
       item.status = 'price_updated'
       try {
         await sendEmail({
@@ -63,8 +85,8 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      message: apiResult.success ? 'Approved and price updated successfully' : 'Approved but pricing API call failed',
-      data: { status: item.status, apiResult },
+      message: apiSuccess ? 'Approved and price updated successfully' : 'Approved but pricing API call failed',
+      data: { status: item.status, apiResult: apiResultPayload },
     })
   } catch (err) {
     return NextResponse.json(

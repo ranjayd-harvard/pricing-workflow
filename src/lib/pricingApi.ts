@@ -10,6 +10,44 @@ export interface PricingApiResult {
   calledAt: string
 }
 
+export interface PricingApiMultiResult {
+  success: boolean          // true only if ALL items succeeded
+  results: PricingApiResult[]
+  successCount: number
+  failureCount: number
+  calledAt: string
+}
+
+/**
+ * Calls callPricingApi for each item in the array and aggregates results.
+ * Partial success (some rows failed) is reflected in success=false.
+ */
+export async function callPricingApiForItems(
+  items: MappedPricingData[],
+  queueId?: string,
+  requesterEmail?: string,
+  targetCollection: TargetCollection = 'products',
+): Promise<PricingApiMultiResult> {
+  const calledAt = new Date().toISOString()
+  const results: PricingApiResult[] = []
+
+  for (const item of items) {
+    const result = await callPricingApi(item, queueId, requesterEmail, targetCollection)
+    results.push(result)
+  }
+
+  const successCount = results.filter(r => r.success).length
+  const failureCount = results.length - successCount
+
+  return {
+    success: failureCount === 0,
+    results,
+    successCount,
+    failureCount,
+    calledAt,
+  }
+}
+
 /**
  * Dispatches approved pricing data to the correct collection based on
  * the template's targetCollection setting.

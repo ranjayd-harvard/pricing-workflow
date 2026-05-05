@@ -175,7 +175,7 @@ export async function summarizeEmailWithGemini(
   emailBody: string,
   templateName: string,
   fields: TemplateField[]
-): Promise<{ summary: string; extractedData: MappedPricingData }> {
+): Promise<{ summary: string; extractedData: MappedPricingData; extractedItems: MappedPricingData[] }> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
 
   const fieldDescriptions = fields
@@ -186,7 +186,7 @@ export async function summarizeEmailWithGemini(
 
 TEMPLATE: ${templateName}
 
-REQUIRED FIELDS TO EXTRACT:
+FIELDS TO EXTRACT:
 ${fieldDescriptions}
 
 EMAIL CONTENT:
@@ -194,33 +194,45 @@ EMAIL CONTENT:
 ${emailBody}
 ---
 
-Please respond with ONLY a valid JSON object (no markdown, no extra text) in this exact format:
+IMPORTANT: The email may contain data for ONE product/item or MULTIPLE products/items (e.g. from a spreadsheet or table with many rows).
+
+Respond with ONLY a valid JSON object (no markdown, no extra text) in this exact format:
 {
-  "summary": "A concise 2-3 sentence summary of the pricing update request",
-  "extractedData": {
-    "fieldKey": "extracted value or null if not found"
-  }
+  "summary": "A concise 2-3 sentence summary of all pricing updates requested",
+  "extractedItems": [
+    { "fieldKey": "extracted value or null if not found" },
+    { "fieldKey": "extracted value or null if not found" }
+  ]
 }
 
-Extract ALL the field values you can find in the email. Use null for fields not mentioned. Numbers should be numbers (not strings). Dates should be ISO format strings.`
+Rules:
+- extractedItems MUST be an array — always, even when there is only one item.
+- Each element in extractedItems represents one product/item/row.
+- Extract ALL rows — do not truncate or summarise the list.
+- Numbers should be numbers (not strings). Dates should be ISO format strings.
+- Use null for fields not present in that row.`
 
   const result = await model.generateContent(prompt)
-  const response = result.response
-  const text = response.text()
-
-  // Strip markdown code fences if present
+  const text = result.response.text()
   const cleaned = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
   try {
     const parsed = JSON.parse(cleaned)
+    const items: MappedPricingData[] = Array.isArray(parsed.extractedItems) && parsed.extractedItems.length > 0
+      ? parsed.extractedItems
+      : parsed.extractedData
+        ? [parsed.extractedData]  // legacy fallback if Gemini returns old format
+        : [{}]
     return {
       summary: parsed.summary || 'No summary generated.',
-      extractedData: parsed.extractedData || {},
+      extractedData: items[0],   // keep single-item field for backwards compat
+      extractedItems: items,
     }
   } catch {
     return {
       summary: text.slice(0, 500),
       extractedData: {},
+      extractedItems: [{}],
     }
   }
 }

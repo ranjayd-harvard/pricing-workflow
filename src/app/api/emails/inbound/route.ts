@@ -283,14 +283,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
       pendingInfoItem.missingFields = []
       await pendingInfoItem.save()
 
-      const { summary, extractedData } = await summarizeEmailWithGemini(threadText, template.name, template.mandatoryFields)
-      const mappedData = mapToPricingTemplate(extractedData, summary, [
-        ...template.mandatoryFields,
-        ...(template.optionalFields || []),
-      ])
+      const { summary, extractedData, extractedItems } = await summarizeEmailWithGemini(threadText, template.name, template.mandatoryFields)
+      const allFields = [...template.mandatoryFields, ...(template.optionalFields || [])]
+      const mappedItems = extractedItems.map(item => mapToPricingTemplate(item, summary, allFields))
+      const mappedData = mappedItems[0]
       pendingInfoItem.summary = summary
       pendingInfoItem.extractedData = extractedData
       pendingInfoItem.mappedData = mappedData
+      pendingInfoItem.mappedItems = mappedItems
       pendingInfoItem.status = 'pending_confirmation'
       await pendingInfoItem.save()
 
@@ -343,14 +343,14 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     }
 
     // All fields present — summarize and stage for confirmation
-    const { summary, extractedData } = await summarizeEmailWithGemini(emailBody, template.name, template.mandatoryFields)
-    const mappedData = mapToPricingTemplate(extractedData, summary, [
-      ...template.mandatoryFields,
-      ...(template.optionalFields || []),
-    ])
+    const { summary, extractedData, extractedItems } = await summarizeEmailWithGemini(emailBody, template.name, template.mandatoryFields)
+    const allFields = [...template.mandatoryFields, ...(template.optionalFields || [])]
+    const mappedItems = extractedItems.map(item => mapToPricingTemplate(item, summary, allFields))
+    const mappedData = mappedItems[0]
     newQueueItem.summary = summary
     newQueueItem.extractedData = extractedData
     newQueueItem.mappedData = mappedData
+    newQueueItem.mappedItems = mappedItems
     newQueueItem.status = 'pending_confirmation'
     await newQueueItem.save()
 

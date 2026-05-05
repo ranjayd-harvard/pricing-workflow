@@ -63,6 +63,7 @@ export interface PricingQueueItem {
   extractedData: MappedPricingData
   summary?: string
   mappedData?: MappedPricingData
+  mappedItems?: MappedPricingData[]
   clarificationOptions?: { templateId: string; templateName: string }[]
   approvedBy?: string
   approvedAt?: string

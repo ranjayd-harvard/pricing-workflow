@@ -45,6 +45,7 @@ const PricingQueueSchema = new Schema<PricingQueueDocument>(
     extractedData: { type: Schema.Types.Mixed, default: {} },
     summary: String,
     mappedData: { type: Schema.Types.Mixed },
+    mappedItems: { type: [Schema.Types.Mixed], default: undefined },
     approvedBy: String,
     approvedAt: String,
     rejectedBy: String,
