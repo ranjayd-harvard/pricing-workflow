@@ -95,8 +95,18 @@ export async function detectEmailIntent(
   emailBody: string,
   subject: string,
   hasPendingInfoItem: boolean,
+  hasPendingConfirmationItem: boolean = false,
 ): Promise<IntentResult> {
   const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+  // Strip quoted reply lines (lines starting with ">") so that the pricing
+  // data from the system's confirmation email doesn't drown out the sender's
+  // short affirmative reply and cause misclassification.
+  const strippedBody = emailBody
+    .split('\n')
+    .filter(line => !line.trimStart().startsWith('>'))
+    .join('\n')
+    .trim()
 
   const prompt = `You are an email intent classifier for a pricing update workflow system.
 
@@ -109,18 +119,23 @@ Classify the following email into exactly one of these intents:
 CONTEXT:
 - Subject: "${subject}"
 - Subject starts with "Re:": ${subject.toLowerCase().startsWith('re:') ? 'YES' : 'NO'}
-- There is an existing PENDING request from this sender awaiting missing info: ${hasPendingInfoItem ? 'YES' : 'NO'}
+- There is an existing request from this sender AWAITING MISSING INFO: ${hasPendingInfoItem ? 'YES' : 'NO'}
+- There is an existing request from this sender AWAITING CONFIRMATION: ${hasPendingConfirmationItem ? 'YES' : 'NO'}
 
-EMAIL BODY:
+NOTE: The email body below has had quoted reply lines (starting with ">") removed. Judge intent only from the sender's own words.
+
+EMAIL BODY (quoted lines stripped):
 ---
-${emailBody}
+${strippedBody || '(empty after stripping quotes)'}
 ---
 
-Signals to look for:
-- "confirm_request" intent: short affirmative reply — "yes", "confirmed", "looks good", "correct", "proceed", "approved", "that's right", "go ahead"
-- "correction" intent: phrases like "wrong price", "mistake", "correction", "actually", "should be", "meant to say", "last update was not correct", "please update", "previous request", "instead of", or "no" followed by corrected values
-- "reply_missing_info" intent: providing only specific field values, short reply, responds to a request for missing info
-- "new_request" intent: full standalone email with complete request details, no references to previous submissions
+Rules:
+- If "AWAITING CONFIRMATION" is YES and the body is a short affirmative, classify as "confirm_request" with high confidence.
+- If "AWAITING CONFIRMATION" is YES and the body contains corrections or new values, classify as "correction".
+- "confirm_request": short affirmative — "yes", "confirmed", "looks good", "correct", "proceed", "approved", "that's right", "go ahead", "yes confirmed", "yes please", "that's correct"
+- "correction": "wrong price", "mistake", "correction", "actually", "should be", "meant to say", "instead of", "no" followed by corrected values
+- "reply_missing_info": providing only specific field values in response to a missing-info request
+- "new_request": full standalone email with complete request details, no references to previous submissions
 
 Respond with ONLY a valid JSON object:
 {
@@ -140,7 +155,10 @@ Respond with ONLY a valid JSON object:
       reasoning: parsed.reasoning || '',
     }
   } catch {
-    // Default: if subject has Re: and there's a pending item → reply, else new
+    // Fallback heuristic
+    if (hasPendingConfirmationItem && subject.toLowerCase().startsWith('re:')) {
+      return { intent: 'confirm_request', confidence: 'low', reasoning: 'Fallback: pending confirmation + Re: subject' }
+    }
     return {
       intent: hasPendingInfoItem && subject.toLowerCase().startsWith('re:')
         ? 'reply_missing_info'

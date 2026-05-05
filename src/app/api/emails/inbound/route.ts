@@ -172,16 +172,24 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
 
     // ── STEP 2: standard intent detection (new / reply / correction) ────────
     // Also match 'failed' items — sender may reply after an approval API failure
-    const pendingInfoItem = await PricingQueueModel.findOne({
-      requesterEmail: senderEmail,
-      templateId: template._id.toString(),
-      status: { $in: ['pending_info', 'failed'] },
-    }).sort({ createdAt: -1 })
+    const [pendingInfoItem, pendingConfirmItem] = await Promise.all([
+      PricingQueueModel.findOne({
+        requesterEmail: senderEmail,
+        templateId: template._id.toString(),
+        status: { $in: ['pending_info', 'failed'] },
+      }).sort({ createdAt: -1 }),
+      PricingQueueModel.findOne({
+        requesterEmail: senderEmail,
+        templateId: template._id.toString(),
+        status: 'pending_confirmation',
+      }).sort({ createdAt: -1 }),
+    ])
 
     const { intent, confidence: intentConfidence, reasoning: intentReasoning } = await detectEmailIntent(
       emailBody,
       subject,
       !!pendingInfoItem,
+      !!pendingConfirmItem,
     )
     console.log(`[Email Inbound] Intent: ${intent} (${intentConfidence}) — ${intentReasoning} | Template: "${template.name}"`)
 
@@ -209,12 +217,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse>>
     // ── CONFIRM REQUEST ──────────────────────────────────────────────────────
     // Sender replied "yes" to the confirmation email — move to pending_approval
     if (intent === 'confirm_request') {
-      const pendingConfirmItem = await PricingQueueModel.findOne({
-        requesterEmail: senderEmail,
-        templateId: template._id.toString(),
-        status: 'pending_confirmation',
-      }).sort({ createdAt: -1 })
-
       if (pendingConfirmItem) {
         pendingConfirmItem.emailThread.push({
           from: senderEmail,
