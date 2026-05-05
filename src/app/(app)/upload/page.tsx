@@ -209,7 +209,7 @@ export default function UploadPage() {
             <input
               ref={fileInputRef}
               type="file"
-              accept={[...IMAGE_TYPES, ...SPREADSHEET_TYPES, '.csv', '.xlsx', '.xls'].join(',')}
+              accept={[...Array.from(IMAGE_TYPES), ...Array.from(SPREADSHEET_TYPES), '.csv', '.xlsx', '.xls'].join(',')}
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f) }}
             />
