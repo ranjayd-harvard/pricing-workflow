@@ -4,11 +4,11 @@ import fs from 'fs'
 const BASE_URL = (process.env.NEXT_PUBLIC_APP_URL || 'http://frontend:3041').replace(/\/$/, '')
 const WEBHOOK_URL = BASE_URL + '/api/emails/inbound'
 const EXTRACT_IMAGE_URL = BASE_URL + '/api/emails/extract-image'
+const EXTRACT_SPREADSHEET_URL = BASE_URL + '/api/emails/extract-spreadsheet'
 const SYSTEM_EMAIL = (process.env.SMTP_USER || '').toLowerCase()
 const POLL_INTERVAL_MS = 60_000
 const MAX_PER_RUN = 5
 const STATE_FILE = '/data/processed-ids.json'
-// How far back to look — 30d tolerates longer planned downtime
 const LOOKBACK = '30d'
 
 function loadProcessed(): Record<string, boolean> {
@@ -52,88 +52,132 @@ function extractBody(payload: any): string {
   return ''
 }
 
+function fileExtension(filename: string): string {
+  const m = filename.toLowerCase().match(/\.[^.]+$/)
+  return m ? m[0] : ''
+}
+
+// ── Attachment type sets ────────────────────────────────────────────────────
+
 const IMAGE_TYPES = new Set([
   'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
   'image/webp', 'image/bmp', 'image/tiff', 'image/heic', 'image/heif',
 ])
 
-interface ImageAttachment {
+const SPREADSHEET_TYPES = new Set([
+  'text/csv',
+  'application/csv',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+])
+const SPREADSHEET_EXTENSIONS = new Set(['.csv', '.xlsx', '.xls'])
+
+interface Attachment {
   filename: string
   mimeType: string
   attachmentId: string
 }
 
-/** Walk the MIME tree and collect all image attachment descriptors. */
-function collectImageAttachments(payload: any): ImageAttachment[] {
+// ── MIME tree walkers ───────────────────────────────────────────────────────
+
+function collectImageAttachments(payload: any): Attachment[] {
   if (!payload) return []
-  const results: ImageAttachment[] = []
+  const results: Attachment[] = []
   if (IMAGE_TYPES.has(payload.mimeType) && payload.filename && payload.body?.attachmentId) {
-    results.push({
-      filename: payload.filename,
-      mimeType: payload.mimeType,
-      attachmentId: payload.body.attachmentId,
-    })
+    results.push({ filename: payload.filename, mimeType: payload.mimeType, attachmentId: payload.body.attachmentId })
   }
   if (payload.parts) {
-    for (const part of payload.parts) {
-      results.push(...collectImageAttachments(part))
-    }
+    for (const part of payload.parts) results.push(...collectImageAttachments(part))
   }
   return results
 }
 
-/**
- * Download each image attachment from Gmail, call /api/emails/extract-image
- * for each, and return the concatenated extracted text blocks.
- * Non-fatal: if any attachment fails, it is skipped with a warning.
- */
-async function extractTextFromAttachments(
-  gmail: Awaited<ReturnType<typeof getGmailClient>>,
-  messageId: string,
-  attachments: ImageAttachment[],
-  senderEmail: string,
-  subject: string,
+function collectSpreadsheetAttachments(payload: any): Attachment[] {
+  if (!payload) return []
+  const results: Attachment[] = []
+  if (payload.filename && payload.body?.attachmentId) {
+    const isType = SPREADSHEET_TYPES.has(payload.mimeType)
+    const isExt = SPREADSHEET_EXTENSIONS.has(fileExtension(payload.filename))
+    if (isType || isExt) {
+      results.push({ filename: payload.filename, mimeType: payload.mimeType, attachmentId: payload.body.attachmentId })
+    }
+  }
+  if (payload.parts) {
+    for (const part of payload.parts) results.push(...collectSpreadsheetAttachments(part))
+  }
+  return results
+}
+
+// ── Attachment downloaders ──────────────────────────────────────────────────
+
+type GmailClient = Awaited<ReturnType<typeof getGmailClient>>
+
+async function downloadAttachment(gmail: GmailClient, messageId: string, att: Attachment): Promise<Buffer | null> {
+  const attRes = await gmail.users.messages.attachments.get({ userId: 'me', messageId, id: att.attachmentId })
+  const base64 = attRes.data.data
+  if (!base64) return null
+  return Buffer.from(base64.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
+}
+
+async function extractFromImages(
+  gmail: GmailClient, messageId: string, attachments: Attachment[], senderEmail: string, subject: string,
 ): Promise<string> {
   const blocks: string[] = []
-
   for (const att of attachments) {
     try {
-      console.log(`[Poller] Extracting image: ${att.filename} (${att.mimeType})`)
-      const attRes = await gmail.users.messages.attachments.get({
-        userId: 'me',
-        messageId,
-        id: att.attachmentId,
-      })
-      const base64 = attRes.data.data
-      if (!base64) continue
-
-      // Decode Gmail's URL-safe base64 to a Buffer, then create a Blob for FormData
-      const buffer = Buffer.from(base64.replace(/-/g, '+').replace(/_/g, '/'), 'base64')
-      const blob = new Blob([buffer], { type: att.mimeType })
+      console.log(`[Poller] Extracting image: ${att.filename}`)
+      const buffer = await downloadAttachment(gmail, messageId, att)
+      if (!buffer) continue
       const form = new FormData()
-      form.append('image', blob, att.filename)
+      form.append('image', new Blob([new Uint8Array(buffer)], { type: att.mimeType }), att.filename)
       form.append('senderEmail', senderEmail)
       form.append('subject', subject)
-
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 60_000)
       const res = await fetch(EXTRACT_IMAGE_URL, { method: 'POST', body: form, signal: controller.signal })
       clearTimeout(timeout)
-
       const json = await res.json() as { success: boolean; data?: { extractedText: string } }
       if (json.success && json.data?.extractedText) {
         blocks.push(`[Extracted from image: ${att.filename}]\n${json.data.extractedText}`)
         console.log(`[Poller] ✓ Image extracted: ${att.filename}`)
-      } else {
-        console.warn(`[Poller] Extract-image returned no text for ${att.filename}`)
       }
     } catch (err: any) {
-      console.warn(`[Poller] Failed to extract ${att.filename}:`, err?.message || err)
+      console.warn(`[Poller] Failed to extract image ${att.filename}:`, err?.message || err)
     }
   }
-
   return blocks.join('\n\n')
 }
+
+async function extractFromSpreadsheets(
+  gmail: GmailClient, messageId: string, attachments: Attachment[], senderEmail: string, subject: string,
+): Promise<string> {
+  const blocks: string[] = []
+  for (const att of attachments) {
+    try {
+      console.log(`[Poller] Extracting spreadsheet: ${att.filename}`)
+      const buffer = await downloadAttachment(gmail, messageId, att)
+      if (!buffer) continue
+      const form = new FormData()
+      form.append('file', new Blob([new Uint8Array(buffer)], { type: att.mimeType || 'application/octet-stream' }), att.filename)
+      form.append('senderEmail', senderEmail)
+      form.append('subject', subject)
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 60_000)
+      const res = await fetch(EXTRACT_SPREADSHEET_URL, { method: 'POST', body: form, signal: controller.signal })
+      clearTimeout(timeout)
+      const json = await res.json() as { success: boolean; data?: { extractedText: string } }
+      if (json.success && json.data?.extractedText) {
+        blocks.push(`[Extracted from spreadsheet: ${att.filename}]\n${json.data.extractedText}`)
+        console.log(`[Poller] ✓ Spreadsheet extracted: ${att.filename}`)
+      }
+    } catch (err: any) {
+      console.warn(`[Poller] Failed to extract spreadsheet ${att.filename}:`, err?.message || err)
+    }
+  }
+  return blocks.join('\n\n')
+}
+
+// ── Webhook ─────────────────────────────────────────────────────────────────
 
 async function postWebhook(payload: object): Promise<{ ok: boolean; status: number; text: string }> {
   try {
@@ -149,23 +193,21 @@ async function postWebhook(payload: object): Promise<{ ok: boolean; status: numb
     const text = await response.text()
     return { ok: response.ok, status: response.status, text }
   } catch (err: any) {
-    // Network error or timeout — app is down, will retry next poll
     const msg = err?.name === 'AbortError' ? 'timeout after 30s' : String(err?.message || err)
     return { ok: false, status: 0, text: msg }
   }
 }
 
+// ── Poll loop ────────────────────────────────────────────────────────────────
+
 async function poll() {
   const gmail = await getGmailClient()
-  // Secondary dedup guard (state file) — primary dedup is Gmail's is:unread label
   const processed = loadProcessed()
 
-  // is:unread is the key filter — messages we've successfully processed are marked read,
-  // so they never appear here again, even if the state file is lost.
   const res = await gmail.users.messages.list({
     userId: 'me',
     q: `subject:"Pricing Update Request" newer_than:${LOOKBACK} is:unread`,
-    maxResults: MAX_PER_RUN + 10, // fetch a few extras to account for skippable messages
+    maxResults: MAX_PER_RUN + 10,
   })
 
   const messages = res.data.messages || []
@@ -175,29 +217,18 @@ async function poll() {
   for (const msg of messages) {
     if (count >= MAX_PER_RUN) break
     if (!msg.id) continue
-
-    // Secondary guard: skip if we already handled this ID in a prior run
-    if (processed[msg.id]) {
-      console.log(`[Poller] Skip (state file): ${msg.id}`)
-      continue
-    }
+    if (processed[msg.id]) { console.log(`[Poller] Skip (state file): ${msg.id}`); continue }
 
     const full = await gmail.users.messages.get({ userId: 'me', id: msg.id!, format: 'full' })
     const headers = full.data.payload?.headers || []
-
     const from    = getHeader(headers, 'from')
     const to      = getHeader(headers, 'to')
     const subject = getHeader(headers, 'subject')
 
-    // Skip emails sent by the system itself (replies we send)
     if (SYSTEM_EMAIL && from.toLowerCase().includes(SYSTEM_EMAIL)) {
       console.log(`[Poller] Skip (system email): ${msg.id}`)
       processed[msg.id] = true
-      // Mark read so it never shows in is:unread queries
-      await gmail.users.messages.modify({
-        userId: 'me', id: msg.id!,
-        requestBody: { removeLabelIds: ['UNREAD'] },
-      }).catch(() => {/* best-effort */})
+      await gmail.users.messages.modify({ userId: 'me', id: msg.id!, requestBody: { removeLabelIds: ['UNREAD'] } }).catch(() => {})
       continue
     }
 
@@ -209,34 +240,32 @@ async function poll() {
     const senderEmail = from.match(/<(.+?)>/)?.[1] || from
     let body = extractBody(full.data.payload)
 
-    // Extract text from any image attachments and append to email body
-    const imageAttachments = collectImageAttachments(full.data.payload)
-    if (imageAttachments.length > 0) {
-      console.log(`[Poller] Found ${imageAttachments.length} image attachment(s) in "${subject}"`)
-      const imageText = await extractTextFromAttachments(gmail, msg.id!, imageAttachments, senderEmail, subject)
-      if (imageText) body = body ? `${body}\n\n${imageText}` : imageText
+    // Extract text from image attachments
+    const imageAtts = collectImageAttachments(full.data.payload)
+    if (imageAtts.length > 0) {
+      console.log(`[Poller] Found ${imageAtts.length} image attachment(s)`)
+      const text = await extractFromImages(gmail, msg.id!, imageAtts, senderEmail, subject)
+      if (text) body = body ? `${body}\n\n${text}` : text
+    }
+
+    // Extract text from spreadsheet attachments
+    const sheetAtts = collectSpreadsheetAttachments(full.data.payload)
+    if (sheetAtts.length > 0) {
+      console.log(`[Poller] Found ${sheetAtts.length} spreadsheet attachment(s)`)
+      const text = await extractFromSpreadsheets(gmail, msg.id!, sheetAtts, senderEmail, subject)
+      if (text) body = body ? `${body}\n\n${text}` : text
     }
 
     console.log(`[Poller] Processing: "${subject}" from ${from}`)
-
     const result = await postWebhook({ from, to, subject, text: body, messageId: msg.id })
     console.log(`[Poller] Webhook → ${result.status || 'ERR'} — ${result.text.slice(0, 200)}`)
 
     if (result.ok) {
       processed[msg.id] = true
       count++
-      // Mark as read — this is the primary mechanism that prevents reprocessing.
-      // Even if the state file is lost on restart, is:unread will exclude this message.
-      await gmail.users.messages.modify({
-        userId: 'me',
-        id: msg.id!,
-        requestBody: { removeLabelIds: ['UNREAD'] },
-      })
+      await gmail.users.messages.modify({ userId: 'me', id: msg.id!, requestBody: { removeLabelIds: ['UNREAD'] } })
       console.log(`[Poller] ✓ Done + marked read: ${msg.id}`)
     } else {
-      // Message stays UNREAD in Gmail → will be retried automatically next poll.
-      // This handles app downtime: once the app recovers, unread messages queue up
-      // and get processed in order (up to MAX_PER_RUN per minute).
       console.error(`[Poller] ✗ Webhook failed — message stays unread, will retry next poll`)
     }
   }

@@ -208,6 +208,33 @@ Extract ALL the field values you can find in the email. Use null for fields not 
 }
 
 /**
+ * Uses Gemini to extract pricing information from spreadsheet table text.
+ * tableText is a plain-text representation (CSV or tab-separated rows) of the sheet.
+ * Returns a plain-text email body suitable for the inbound pipeline.
+ */
+export async function extractTextFromSpreadsheet(tableText: string): Promise<string> {
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
+
+  const prompt = `You are a data extraction assistant for a pricing workflow system.
+
+The following is tabular data from a spreadsheet (CSV or Excel) that contains pricing information.
+
+SPREADSHEET CONTENT:
+---
+${tableText}
+---
+
+Extract ALL pricing-related information from this data. The table may contain product names, SKUs, prices, effective dates, regions, currencies, or reasons for price changes.
+
+Write the extracted data as a structured pricing update request email body. Include every row's data clearly. Format as plain text as if a person typed this email — no markdown, no bullet points, just clear labeled fields. Be thorough and include ALL rows and columns.
+
+Output ONLY the email body content — no preamble, no commentary.`
+
+  const result = await model.generateContent(prompt)
+  return result.response.text()
+}
+
+/**
  * Uses Gemini Vision to extract pricing information from an image.
  * Returns a plain-text representation suitable for the email inbound pipeline.
  */
