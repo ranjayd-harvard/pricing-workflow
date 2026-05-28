@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractTextFromImage } from '@/lib/gemini'
+import { extractTextWithTextract, isTextractSupported } from '@/lib/textract'
 import { sendEmail } from '@/lib/email'
+import { requireAdmin } from '@/lib/apiAuth'
+
+type OcrEngine = 'gemini' | 'textract'
 
 const SUPPORTED_TYPES = [
   'image/jpeg',
@@ -29,12 +33,14 @@ const MAX_SIZE_BYTES = 8 * 1024 * 1024 // 8 MB
  * 4. Returns { extractedText, filename }
  */
 export async function POST(req: NextRequest) {
+  const auth = await requireAdmin(); if (auth.error) return auth.error
   try {
     const formData = await req.formData()
     const imageFile = formData.get('image') as File | null
     const senderEmail = ((formData.get('senderEmail') as string) || '').trim()
     const senderName = ((formData.get('senderName') as string) || '').trim()
     const subject = ((formData.get('subject') as string) || 'Pricing Update Request').trim()
+    const ocrEngine = (((formData.get('ocrEngine') as string) || 'gemini') as OcrEngine)
 
     if (!imageFile) {
       return NextResponse.json({ success: false, error: 'No image file provided' }, { status: 400 })
@@ -55,12 +61,20 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    if (ocrEngine === 'textract' && !isTextractSupported(imageFile.type)) {
+      return NextResponse.json(
+        { success: false, error: `AWS Textract only supports JPEG and PNG. Your file is ${imageFile.type}. Please convert the image or switch to Google Gemini.` },
+        { status: 400 },
+      )
+    }
+
     const arrayBuffer = await imageFile.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-    const base64Data = buffer.toString('base64')
 
-    // Extract pricing text via Gemini Vision
-    const extractedText = await extractTextFromImage(base64Data, imageFile.type)
+    // Extract pricing text via selected OCR engine
+    const extractedText = ocrEngine === 'textract'
+      ? await extractTextWithTextract(buffer, imageFile.type)
+      : await extractTextFromImage(buffer.toString('base64'), imageFile.type)
 
     // Send audit email to PRICING_EMAIL with the image attached (non-fatal)
     const pricingEmail = process.env.PRICING_EMAIL
@@ -80,7 +94,7 @@ export async function POST(req: NextRequest) {
             <div style="font-family:-apple-system,sans-serif;color:#1e293b;max-width:600px;margin:0 auto">
               <div style="background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:28px 32px;border-radius:12px 12px 0 0">
                 <h1 style="color:#fff;margin:0;font-size:20px;font-weight:600">Image Upload — Pricing Update</h1>
-                <p style="color:#94a3b8;margin:6px 0 0;font-size:13px">Submitted via the Pricing Workflow upload tool</p>
+                <p style="color:#94a3b8;margin:6px 0 0;font-size:13px">Submitted via the Pricing Workflow upload tool · OCR: ${ocrEngine === 'textract' ? 'AWS Textract' : 'Google Gemini'}</p>
               </div>
               <div style="background:#fff;padding:28px 32px;border:1px solid #e2e8f0;border-top:none">
                 <p style="margin:0 0 8px"><strong>From:</strong> ${displaySender}</p>

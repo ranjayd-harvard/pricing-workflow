@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import dbConnect from '@/lib/db'
 import { PricingTemplateModel } from '@/models/PricingTemplate'
 import { ApiResponse, PricingTemplate } from '@/types'
+import { requireAdmin } from '@/lib/apiAuth'
 
 export async function GET(): Promise<NextResponse<ApiResponse<PricingTemplate[]>>> {
   try {
@@ -28,6 +29,7 @@ function normalizeFields(fields: any[]): any[] {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse<ApiResponse<PricingTemplate>>> {
+  const auth = await requireAdmin(); if (auth.error) return auth.error
   try {
     await dbConnect()
     const body = await req.json()

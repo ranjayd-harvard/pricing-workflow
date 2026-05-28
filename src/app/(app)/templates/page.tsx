@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { Plus, Edit2, Trash2, RefreshCw, Mail, CheckCircle, XCircle } from 'lucide-react'
 import { PricingTemplate } from '@/types'
 import { useToast } from '@/components/ui/Toast'
@@ -8,6 +9,8 @@ import { cn } from '@/lib/utils'
 import TemplateFormModal from './TemplateFormModal'
 
 export default function TemplatesPage() {
+  const { data: session } = useSession()
+  const isAdmin = session?.user.role === 'admin'
   const { toast } = useToast()
   const [templates, setTemplates] = useState<PricingTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,10 +57,12 @@ export default function TemplatesPage() {
             <RefreshCw className={cn('w-4 h-4', loading && 'animate-spin')} />
             Refresh
           </button>
-          <button onClick={openNew} className="btn-primary text-sm flex items-center gap-2">
-            <Plus className="w-4 h-4" />
-            New Template
-          </button>
+          {isAdmin && (
+            <button onClick={openNew} className="btn-primary text-sm flex items-center gap-2">
+              <Plus className="w-4 h-4" />
+              New Template
+            </button>
+          )}
         </div>
       </div>
 
@@ -70,9 +75,11 @@ export default function TemplatesPage() {
           </div>
           <h3 className="font-semibold text-slate-800 mb-2">No templates yet</h3>
           <p className="text-slate-500 text-sm mb-6">Create your first pricing template to start receiving structured requests.</p>
-          <button onClick={openNew} className="btn-primary text-sm inline-flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Create Template
-          </button>
+          {isAdmin && (
+            <button onClick={openNew} className="btn-primary text-sm inline-flex items-center gap-2">
+              <Plus className="w-4 h-4" /> Create Template
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid gap-4">
@@ -108,6 +115,7 @@ export default function TemplatesPage() {
                     )}
                   </div>
                 </div>
+                {isAdmin && (
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button onClick={() => openEdit(t)} className="btn-secondary text-sm flex items-center gap-1.5 px-3 py-1.5">
                     <Edit2 className="w-3.5 h-3.5" /> Edit
@@ -116,6 +124,7 @@ export default function TemplatesPage() {
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
+              )}
               </div>
             </div>
           ))}

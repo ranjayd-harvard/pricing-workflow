@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import Link from 'next/link'
 import {
   Upload,
@@ -18,6 +19,12 @@ import { cn } from '@/lib/utils'
 
 type Step = 'upload' | 'review' | 'done'
 type FileKind = 'image' | 'spreadsheet'
+type OcrEngine = 'gemini' | 'textract'
+
+const OCR_ENGINES: { value: OcrEngine; label: string; description: string }[] = [
+  { value: 'gemini', label: 'Google Gemini', description: 'Supports all image formats (JPG, PNG, WebP, GIF, BMP, TIFF)' },
+  { value: 'textract', label: 'AWS Textract', description: 'Best for scanned documents and tables · JPEG & PNG only' },
+]
 
 interface ExtractResult {
   extractedText: string
@@ -55,6 +62,8 @@ function detectKind(file: File): FileKind | null {
 }
 
 export default function UploadPage() {
+  const { data: session } = useSession()
+  const isAdmin = session?.user.role === 'admin'
   const [step, setStep] = useState<Step>('upload')
   const [isDragging, setIsDragging] = useState(false)
 
@@ -64,6 +73,8 @@ export default function UploadPage() {
   const [senderEmail, setSenderEmail] = useState('')
   const [senderName, setSenderName] = useState('')
   const [subject, setSubject] = useState('Pricing Update Request')
+
+  const [ocrEngine, setOcrEngine] = useState<OcrEngine>('gemini')
 
   const [extractResult, setExtractResult] = useState<ExtractResult | null>(null)
   const [editedText, setEditedText] = useState('')
@@ -110,6 +121,7 @@ export default function UploadPage() {
       let url: string
       if (fileKind === 'image') {
         form.append('image', file)
+        form.append('ocrEngine', ocrEngine)
         url = '/api/emails/extract-image'
       } else {
         form.append('file', file)
@@ -159,6 +171,7 @@ export default function UploadPage() {
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setStep('upload'); setFile(null); setFileKind(null); setPreviewUrl(null)
     setSenderEmail(''); setSenderName(''); setSubject('Pricing Update Request')
+    setOcrEngine('gemini')
     setExtractResult(null); setEditedText(''); setError(null); setSubmitResult(null)
   }
 
@@ -167,8 +180,13 @@ export default function UploadPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Upload Pricing File</h1>
         <p className="text-slate-500 text-sm mt-1">
-          Upload an image or spreadsheet with pricing data — Gemini will extract the data and submit it to the queue.
+          Upload an image or spreadsheet with pricing data — AI will extract the data and submit it to the queue.
         </p>
+        {!isAdmin && (
+          <p className="mt-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 inline-block">
+            Viewer — you can review this page but cannot upload or submit files
+          </p>
+        )}
       </div>
 
       {/* Step indicator */}
@@ -267,17 +285,37 @@ export default function UploadPage() {
                 className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 bg-white" />
             </div>
 
+            {fileKind !== 'spreadsheet' && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                  OCR Engine
+                </label>
+                <select
+                  value={ocrEngine}
+                  onChange={e => setOcrEngine(e.target.value as OcrEngine)}
+                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 bg-white appearance-none cursor-pointer"
+                >
+                  {OCR_ENGINES.map(engine => (
+                    <option key={engine.value} value={engine.value}>{engine.label}</option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-xs text-slate-400">
+                  {OCR_ENGINES.find(e => e.value === ocrEngine)?.description}
+                </p>
+              </div>
+            )}
+
             {error && (
               <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
                 <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" /><span>{error}</span>
               </div>
             )}
 
-            <button onClick={handleExtract} disabled={!file || !senderEmail.trim() || extracting}
+            <button onClick={handleExtract} disabled={!isAdmin || !file || !senderEmail.trim() || extracting}
               className={cn('w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all',
                 file && senderEmail.trim() && !extracting ? 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm' : 'bg-slate-100 text-slate-400 cursor-not-allowed')}>
               {extracting ? (
-                <><Loader2 className="w-4 h-4 animate-spin" />Extracting with Gemini...</>
+                <><Loader2 className="w-4 h-4 animate-spin" />Extracting with {ocrEngine === 'textract' ? 'Textract' : 'Gemini'}...</>
               ) : fileKind === 'spreadsheet' ? (
                 <><FileSpreadsheet className="w-4 h-4" />Extract Data from Spreadsheet</>
               ) : (
@@ -327,6 +365,9 @@ export default function UploadPage() {
                 <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
                 Extracted Text
                 <span className="text-slate-400 font-normal normal-case">— edit if needed before submitting</span>
+                <span className="ml-auto text-slate-300 font-normal normal-case">
+                  via {ocrEngine === 'textract' ? 'AWS Textract' : 'Google Gemini'}
+                </span>
               </div>
               <textarea value={editedText} onChange={e => setEditedText(e.target.value)} rows={16}
                 className="w-full flex-1 px-3 py-2.5 text-sm font-mono border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-400 focus:border-brand-400 bg-slate-50 resize-none leading-relaxed" />
@@ -340,7 +381,7 @@ export default function UploadPage() {
           )}
 
           <div className="flex items-center gap-3">
-            <button onClick={handleSubmit} disabled={!editedText.trim() || submitting}
+            <button onClick={handleSubmit} disabled={!isAdmin || !editedText.trim() || submitting}
               className={cn('flex items-center gap-2 py-2.5 px-6 rounded-lg text-sm font-semibold transition-all',
                 editedText.trim() && !submitting ? 'bg-brand-600 hover:bg-brand-700 text-white shadow-sm' : 'bg-slate-100 text-slate-400 cursor-not-allowed')}>
               {submitting ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting to queue...</> : <><Send className="w-4 h-4" />Submit to Queue</>}

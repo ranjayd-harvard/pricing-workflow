@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAdmin } from '@/lib/apiAuth'
 
 /**
  * POST /api/emails/simulate
  * Simulates an inbound email for testing the workflow without a real email server.
  */
 export async function POST(req: NextRequest) {
+  const auth = await requireAdmin(); if (auth.error) return auth.error
   const body = await req.json()
 
   // Forward to the inbound handler

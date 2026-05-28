@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { useSession } from 'next-auth/react'
 import { formatDistanceToNow, format } from 'date-fns'
 import {
   ArrowLeft, CheckCircle, XCircle, RefreshCw,
@@ -36,6 +37,8 @@ function ConfidenceBar({ label }: { label?: string }) {
 export default function QueueItemPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
+  const { data: session } = useSession()
+  const isAdmin = session?.user.role === 'admin'
   const { toast } = useToast()
 
   const [item, setItem] = useState<PricingQueueItem | null>(null)
@@ -158,7 +161,7 @@ export default function QueueItemPage() {
               Re-analyze
             </button>
           )}
-          {canApprove && (
+          {canApprove && isAdmin && (
             <>
               <button onClick={() => setShowRejectForm(v => !v)} disabled={!!actionLoading}
                 className="btn-danger text-sm flex items-center gap-2">
@@ -171,6 +174,9 @@ export default function QueueItemPage() {
                 Approve & Update
               </button>
             </>
+          )}
+          {canApprove && !isAdmin && (
+            <span className="text-xs text-slate-400 italic">Viewer — approval not permitted</span>
           )}
         </div>
       </div>

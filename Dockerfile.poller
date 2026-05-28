@@ -4,10 +4,10 @@ WORKDIR /app
 
 # Install only what the poller needs
 COPY package.json package-lock.json* ./
-RUN npm install --ignore-scripts 2>/dev/null || npm install
+RUN npm install --legacy-peer-deps
 
 # Install googleapis and tsx (not in main package.json)
-RUN npm install googleapis tsx
+RUN npm install googleapis tsx --legacy-peer-deps
 
 COPY scripts/gmail-poller.ts ./scripts/
 

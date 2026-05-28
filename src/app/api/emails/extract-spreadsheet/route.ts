@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { extractTextFromSpreadsheet } from '@/lib/gemini'
 import { sendEmail } from '@/lib/email'
+import { requireAdmin } from '@/lib/apiAuth'
 
 const SUPPORTED_TYPES: Record<string, string> = {
   'text/csv': 'csv',
@@ -54,6 +55,7 @@ function workbookToText(wb: XLSX.WorkBook): string {
  * 4. Returns { extractedText, filename, sheetNames }
  */
 export async function POST(req: NextRequest) {
+  const auth = await requireAdmin(); if (auth.error) return auth.error
   try {
     const formData = await req.formData()
     const file = formData.get('file') as File | null

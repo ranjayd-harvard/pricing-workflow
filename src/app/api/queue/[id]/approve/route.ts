@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import dbConnect from '@/lib/db'
 import { PricingQueueModel } from '@/models/PricingQueue'
 import { sendEmail, buildApprovalNotificationEmail, buildApiFailureEmail } from '@/lib/email'
@@ -11,9 +13,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ): Promise<NextResponse<ApiResponse>> {
   try {
+    const session = await getServerSession(authOptions)
+    if (!session || session.user.role !== 'admin') {
+      return NextResponse.json({ success: false, error: 'Forbidden: admin access required' }, { status: 403 })
+    }
+
     await dbConnect()
     const { id } = await params
-    const { approvedBy = 'admin' } = await req.json().catch(() => ({}))
+    const approvedBy = session.user.name ?? session.user.email ?? 'admin'
 
     const item = await PricingQueueModel.findById(id)
     if (!item) return NextResponse.json({ success: false, error: 'Queue item not found' }, { status: 404 })
@@ -75,7 +82,7 @@ export async function POST(
         await sendEmail({
           to: item.requesterEmail,
           subject: `Re: ${item.subject} — Action Required: Missing Information`,
-          html: buildApiFailureEmail(item.requesterEmail, item.subject, apiResult.error || 'Unknown error'),
+          html: buildApiFailureEmail(item.requesterEmail, item.subject, item.apiCallResult?.error || 'Unknown error'),
         })
       } catch (emailErr) {
         console.error('[Approve] Failed to send failure email:', emailErr)

@@ -1,12 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSession } from 'next-auth/react'
 import { Send, Zap, ChevronDown, Info } from 'lucide-react'
 import { PricingTemplate } from '@/types'
 import { useToast } from '@/components/ui/Toast'
 import { cn } from '@/lib/utils'
 
 export default function SimulatePage() {
+  const { data: session } = useSession()
+  const isAdmin = session?.user.role === 'admin'
   const { toast } = useToast()
   const [templates, setTemplates] = useState<PricingTemplate[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<PricingTemplate | null>(null)
@@ -97,6 +100,11 @@ export default function SimulatePage() {
         <p className="text-slate-500 text-sm mt-1">
           Test the workflow by simulating an inbound pricing request email
         </p>
+        {!isAdmin && (
+          <p className="mt-2 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 inline-block">
+            Viewer — you can review this page but cannot send simulated emails
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -174,17 +182,23 @@ export default function SimulatePage() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading || !selectedTemplate}
-              className="btn-primary w-full flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <><Zap className="w-4 h-4 animate-spin" /> Processing...</>
-              ) : (
-                <><Send className="w-4 h-4" /> Send Simulated Email</>
-              )}
-            </button>
+            {isAdmin ? (
+              <button
+                type="submit"
+                disabled={loading || !selectedTemplate}
+                className="btn-primary w-full flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <><Zap className="w-4 h-4 animate-spin" /> Processing...</>
+                ) : (
+                  <><Send className="w-4 h-4" /> Send Simulated Email</>
+                )}
+              </button>
+            ) : (
+              <div className="w-full text-center text-xs text-slate-400 py-2">
+                Admin access required to send simulated emails
+              </div>
+            )}
           </form>
         </div>
 

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 44" fill="none">
+  <defs>
+    <linearGradient id="bolt" x1="6" y1="0" x2="30" y2="44" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22D3EE"/>
+      <stop offset="45%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#A855F7"/>
+    </linearGradient>
+    <linearGradient id="shadow" x1="8" y1="2" x2="34" y2="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#164E63"/>
+      <stop offset="100%" stop-color="#4C1D95"/>
+    </linearGradient>
+  </defs>
+  <polygon points="22,2 6,22 16,22 13,42 30,20 20,20" fill="url(#shadow)" opacity="0.4" transform="translate(1.5,1.5)"/>
+  <polygon points="22,2 6,22 16,22 13,42 30,20 20,20" fill="url(#bolt)"/>
+</svg>
