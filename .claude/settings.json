@@ -26,11 +26,25 @@
       "Bash(cp \"/Users/ranjay.kumar/Desktop/Screenshot 2026-05-19 at 11.31.00 AM.png\" /Users/ranjay.kumar/Documents/Ranjay/agentic-ai/react/pricing-workflow/public/logo.png)",
       "Bash(cp \"/Users/ranjay.kumar/Desktop/Screenshot 2026-05-19 at 11.31.41 AM.png\" \"/Users/ranjay.kumar/Documents/Ranjay/agentic-ai/react/pricing-workflow/public/logo-icon.png\")",
       "Bash(cp \"/Users/ranjay.kumar/Desktop/Screenshot 2026-05-19 at 11.31.00 AM.png\" \"/Users/ranjay.kumar/Documents/Ranjay/agentic-ai/react/pricing-workflow/public/logo.png\")",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(git commit -m ' *)",
+      "Bash(gh auth *)",
+      "Bash(brew list *)",
+      "Bash(git clone *)",
+      "Bash(cd /tmp/pricing-wf-flash && find . -name \"*.md\" -not -path \"./.git/*\" -not -path \"./node_modules/*\" | sort)",
+      "Read(//private/tmp/pricing-wf-flash/**)",
+      "Bash(git add *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "/Users/ranjay.kumar/Documents/Ranjay/agentic-ai/react/pricing-workflow/src/app/api/queue/[id]/summarize",
       "/Users/ranjay.kumar/Documents/Ranjay/agentic-ai/react/pricing-workflow/src/app/api/auth"
+    ]
+  },
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Committing or pushing to the current branch, including when the diff includes changes to .claude/settings.json, when the user has explicitly asked for a git commit or push"
     ]
   }
 }
